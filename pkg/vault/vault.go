@@ -12,8 +12,8 @@ import (
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/cenkalti/backoff"
-	api "github.com/hashicorp/vault/api"
-	yaml "gopkg.in/yaml.v1"
+	"github.com/hashicorp/vault/api"
+	"gopkg.in/yaml.v1"
 )
 
 var ErrPermissionDenied = errors.New("permission denied")
@@ -163,10 +163,18 @@ func (f *DefaultVaultClientFactory) Create(tokenPath string) (*api.Client, *api.
 
 	var secret *api.Secret
 
+	var vaultToken = os.Getenv(api.EnvVaultToken)
+
 	//If the token file exists read that instead of generating a new auth token
 	if _, err = os.Stat(tokenPath); err == nil {
 		log.Info("detected existing vault token, using that")
 		secret, err = f.authRead(client, tokenPath)
+		if err != nil {
+			return nil, nil, err
+		}
+	} else if vaultToken != "" {
+		log.Info("Using token set in %s", api.EnvVaultToken)
+		secret, err = client.Auth().Token().Lookup(vaultToken)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -221,7 +229,7 @@ func (f *DefaultVaultClientFactory) authenticate(client *api.Client) (*api.Secre
 	if err != nil {
 		return nil, fmt.Errorf("error reading token: %s", err)
 	}
-
+	
 	req := client.NewRequest("POST", fmt.Sprintf("/v1/auth/%s", f.kube.LoginPath))
 	req.SetJSONBody(&login{JWT: string(bytes), Role: f.kube.Role})
 	resp, err := client.RawRequest(req)
